@@ -12,6 +12,7 @@ core.lua
 # parser
 parser.lua
 parser-vanilla.lua
+parser-nampower.lua
 
 # interface
 window.lua
