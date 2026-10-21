@@ -14,7 +14,16 @@ local textures = {
   "Interface\\BUTTONS\\WHITE8X8",
   "Interface\\TargetingFrame\\UI-StatusBar",
   "Interface\\Tooltips\\UI-Tooltip-Background",
-  "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"
+  "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar",
+  "Interface\\AddOns\\ShaguDPS\\img\\bars\\Puppeteer",
+  "Interface\\AddOns\\ShaguDPS\\img\\bars\\Puppeteer-Shineless",
+  "Interface\\AddOns\\ShaguDPS\\img\\bars\\Puppeteer-Flat",
+}
+
+-- names of the textures above, as the settings show them
+local texture_names = {
+  "Flat", "Blizzard", "Tooltip", "Skill Bar",
+  "Puppeteer", "Puppeteer Shineless", "Puppeteer Flat",
 }
 
 -- a basic rounding function
@@ -99,6 +108,7 @@ local window = {}
 ShaguDPS.data = data
 ShaguDPS.config = config
 ShaguDPS.textures = textures
+ShaguDPS.texture_names = texture_names
 ShaguDPS.window = window
 ShaguDPS.settings = settings
 ShaguDPS.internals = internals

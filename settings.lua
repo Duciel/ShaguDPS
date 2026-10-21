@@ -320,7 +320,7 @@ local function Build()
 
   settings:CreateConfig("Window", nil, "header")
   settings:CreateConfig("Theme", "theme", labels.theme)
-  settings:CreateConfig("Bar Texture", "texture", textures)
+  settings:CreateConfig("Bar Texture", "texture", ShaguDPS.texture_names)
   settings:CreateConfig("Bar Height", "height", "number")
   settings:CreateConfig("Bar Spacing", "spacing", "number")
   settings:CreateConfig("Pastel Colors", "pastel", "boolean")

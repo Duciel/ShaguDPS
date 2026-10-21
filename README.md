@@ -44,6 +44,9 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 
 **Window**
 - Lock button left of the + button locks or unlocks moving and resizing of all windows.
+- Three more bar textures in the style of Puppeteer's health bars: *Puppeteer*
+  (with the shine), *Puppeteer Shineless* and *Puppeteer Flat*. *Blizzard* is the
+  stock bar. The settings show the textures by name.
 
 **Fixes**
 - New windows start with the size and view of the first window.
@@ -80,7 +83,7 @@ Optional client mods: [ClassicAPI](https://github.com/brues-code/ClassicAPI),
 /sdps mergepet 1       Merge pets into owner data (0 or 1)
 /sdps source 1         Data source (1 auto, 2 ClassicAPI, 3 Nampower, 4 chat log)
 /sdps time 0           Per second time (0 active time, 1 fight duration)
-/sdps texture 2        Statusbar texture (1 to 4)
+/sdps texture 2        Statusbar texture (1 to 7)
 /sdps pastel 0         Use pastel colors (0 or 1)
 /sdps backdrop 1       Show window backdrop and border (0 or 1)
 /sdps theme 1          Theme (0 flat, 1 classic), needs a reload
