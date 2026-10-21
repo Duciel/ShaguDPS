@@ -41,8 +41,8 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 - *Damage* shows total damage, damage per second and share on one bar, for
   example `37.0k (2388.4 DPS, 62.1%)`; *Heal* does the same for effective
   healing (`1500 (96.8 HPS, 100.0%)`), with overhealing as the lighter bar behind
-  it. Large numbers are shortened (`37.0k`, `1.23m`); chat reports use full
-  numbers and add the overhealing to heal lines.
+  it. Large numbers are shortened (`37.0k`, `1.23m`); chat reports
+  use the same short numbers and add the overhealing to heal lines.
 - Windows that showed DPS or HPS switch to Damage or Heal.
 - Fixed the Lua error when sending the heal report to chat.
 

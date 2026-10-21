@@ -85,7 +85,7 @@ local view_templates = {
     chat_string = "%s (%s DPS, %.1f%%)",
     bar_string = "%s (%s DPS, %.1f%%)",
     bar_string_params = { "value_short", "persecond_short", "percent" },
-    chat_string_params = { "value", "value_persecond", "percent" },
+    chat_string_params = { "value_short", "persecond_short", "percent" },
   },
   [3] = { -- heal: effective total, per second and share; overheal as the light bar
     name = "Heal",
@@ -97,7 +97,7 @@ local view_templates = {
     chat_string = "%s (%s HPS, %.1f%%) [+%s overheal]",
     bar_string = "%s (%s HPS, %.1f%%)",
     bar_string_params = { "effective_short", "effective_persecond_short", "effective_percent" },
-    chat_string_params = { "effective_value", "effective_value_persecond", "effective_percent", "uneffective_value" },
+    chat_string_params = { "effective_short", "effective_persecond_short", "effective_percent", "uneffective_short" },
   },
   [5] = { -- threat on the current target
     name = "Threat",
@@ -106,10 +106,10 @@ local view_templates = {
     bar_val = "value",
     bar_lower_max = nil,
     bar_lower_val = nil,
-    chat_string = "%s (%d%%)",
+    chat_string = "%s (%s%%)",
     bar_string = "%s (%s%%)",
     bar_string_params = { "value_short", "threat_perc" },
-    chat_string_params = { "value", "threat_perc" },
+    chat_string_params = { "value_short", "threat_perc" },
   },
 }
 
@@ -579,6 +579,7 @@ local function GetData(unitdata, values)
   values.persecond_short = short(values.value_persecond)
   values.effective_short = short(values.effective_value)
   values.effective_persecond_short = short(values.effective_value_persecond)
+  values.uneffective_short = short(values.uneffective_value)
 
   -- check pet and detect owner/unit names
   local pet  = not classes[data["classes"][values.name]] and data["classes"][values.name] ~= "__other__"
