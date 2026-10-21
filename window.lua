@@ -26,8 +26,25 @@ end
 local MIN_WIDTH = 186
 local TITLE_SHIFT = -8.5
 
-local function SetFightTime(segment)
-  fight_time = config.time_mode == 1 and parser:GetFightTime(segment or 1) or nil
+local function SetFightTime(segment, wconfig)
+  if config.time_mode ~= 1 then
+    fight_time = nil
+  elseif segment == 2 then
+    -- a fight of the history: the time it lasted
+    local fight = ShaguDPS.fights and wconfig and ShaguDPS.fights:Get(wconfig.fight)
+    fight_time = fight and math.max(1, fight.duration) or nil
+  else
+    fight_time = parser:GetFightTime(segment or 1)
+  end
+end
+
+-- caption of a window's segment: Current, Overall or the fight's name
+local function SegmentName(wconfig)
+  if wconfig.segment == 2 then
+    local fight = ShaguDPS.fights and ShaguDPS.fights:Get(wconfig.fight)
+    if fight then return fight.name end
+  end
+  return wconfig.segment == 0 and "Overall" or "Current"
 end
 
 -- all known classes
@@ -116,7 +133,8 @@ end
 local menubuttons = {
   -- segments
   ["Current"]  = { 0, 1, -25.5, "Current Segment", "|cffffffffShow current fight",      "segment" },
-  ["Overall"]  = { 1, 0, -25.5, "Overall Segment", "|cffffffffShow all fights",         "segment" },
+  ["Fights"]   = { 1, 2, -25.5, "Boss Fights",     "|cffffffffPick a past boss fight",   "segment" },
+  ["Overall"]  = { 2, 0, -25.5, "Overall Segment", "|cffffffffShow all fights",         "segment" },
 
   -- modes
   ["Damage"]   = { 0, 1, 25.5,  "Damage View",     "|cffffffffDamage done and damage per second", "view" },
@@ -258,7 +276,7 @@ local function barTooltipShow()
     return
   end
 
-  SetFightTime(config[wid].segment)
+  SetFightTime(config[wid].segment, config[wid])
   local time = ctime(segment[this.unit])
   local value = segment[this.unit]["_sum"]
   local persec = round(value / time, 1)
@@ -361,6 +379,7 @@ local function ResetData()
 
   -- reset the fight timers too
   parser:ResetFight(true)
+  if ShaguDPS.fights then ShaguDPS.fights:Reset() end
 
   -- reload all windows
   window.Refresh()
@@ -666,13 +685,19 @@ local function Refresh(self, force, report)
       self.btnMode.caption:SetText("Threat")
     end
 
+    -- a history fight that was dropped from the list falls back to current
+    if config[wid].segment == 2 and not (ShaguDPS.fights and ShaguDPS.fights:Get(config[wid].fight)) then
+      config[wid].segment = 1
+    end
+
     if config[wid].segment == 0 then
       self.btnOverall.caption:SetTextColor(1,.9,0,1)
-      self.btnSegment.caption:SetText("Overall")
     elseif config[wid].segment == 1 then
       self.btnCurrent.caption:SetTextColor(1,.9,0,1)
-      self.btnSegment.caption:SetText("Current")
+    elseif config[wid].segment == 2 then
+      self.btnFights.caption:SetTextColor(1,.9,0,1)
     end
+    self.btnSegment.caption:SetText(SegmentName(config[wid]))
 
     -- lock icon of the title row
     if self.btnLock then
@@ -701,10 +726,13 @@ local function Refresh(self, force, report)
   end
 
   -- set view to damage or heal
+  local fight = config[wid].segment == 2 and ShaguDPS.fights and ShaguDPS.fights:ForWindow(config[wid])
+  if config[wid].segment == 2 and not fight then config[wid].segment = 1 end
+
   if config[wid].view == 1 then
-    self.segment = data.damage[(config[wid].segment or 0)]
+    self.segment = fight and fight.damage or data.damage[(config[wid].segment or 0)]
   elseif config[wid].view == 3 then
-    self.segment = data.heal[(config[wid].segment or 0)]
+    self.segment = fight and fight.heal or data.heal[(config[wid].segment or 0)]
   elseif config[wid].view == 5 then
     self.segment = data.threat
   end
@@ -714,7 +742,7 @@ local function Refresh(self, force, report)
     local target = ShaguDPS.threat and ShaguDPS.threat.target
     self.btnSegment.caption:SetText(target or "No Target")
   elseif not force and self.lastview == 5 then
-    self.btnSegment.caption:SetText(config[wid].segment == 1 and "Current" or "Overall")
+    self.btnSegment.caption:SetText(SegmentName(config[wid]))
   end
   self.lastview = config[wid].view
 
@@ -739,12 +767,16 @@ local function Refresh(self, force, report)
   -- report to chat if flag is set
   if report then
     local name = view_templates[config[wid].view].name
-    local seg = config[wid].segment == 1 and "Current" or "Overall"
+    local seg = SegmentName(config[wid])
+    if config[wid].segment == 2 then
+      local f = ShaguDPS.fights:Get(config[wid].fight)
+      seg = seg .. (f.kill and " (kill, " or " (wipe, ") .. SecondsToTime(math.floor(f.duration)) .. ")"
+    end
     announce("ShaguDPS - " .. seg .. " " .. name .. ":")
   end
 
   -- load caps of the current view
-  SetFightTime(config[wid].segment)
+  SetFightTime(config[wid].segment, config[wid])
   self.values = self.GetCaps(self.segment, self.values)
 
   local keys, count = SortedKeys(self, self.segment, sort)
@@ -929,9 +961,11 @@ local function CreateWindow(wid)
     -- the threat view always shows the current target
     if frame.btnCurrent:IsShown() or config[frame:GetID()].view == 5 then
       frame.btnOverall:Hide()
+      frame.btnFights:Hide()
       frame.btnCurrent:Hide()
     else
       frame.btnOverall:Show()
+      frame.btnFights:Show()
       frame.btnCurrent:Show()
     end
   end)
@@ -958,12 +992,14 @@ local function CreateWindow(wid)
         frame.btnHeal:Hide()
         frame.btnThreat:Hide()
       frame.btnOverall:Hide()
+      frame.btnFights:Hide()
       frame.btnCurrent:Hide()
     else
       frame.btnDamage:Show()
       frame.btnHeal:Show()
       frame.btnThreat:Show()
       frame.btnOverall:Hide()
+      frame.btnFights:Hide()
       frame.btnCurrent:Hide()
     end
   end)
@@ -973,6 +1009,7 @@ local function CreateWindow(wid)
 
     local button = frame["btn"..name]
     local template = template
+    local name = name
 
     button:SetPoint("CENTER", frame.title, "CENTER", template[3] + TITLE_SHIFT, -17-template[1]*14)
     button:SetFrameStrata("HIGH")
@@ -991,6 +1028,8 @@ local function CreateWindow(wid)
     button:SetScript("OnEnter", btnEnter)
     button:SetScript("OnLeave", btnLeave)
     button:SetScript("OnClick", function()
+      if name == "Fights" then return frame:ToggleFightList() end
+
       config[frame:GetID()][template[6]] = template[2]
 
       frame.scroll = 0
@@ -1187,6 +1226,89 @@ local function CreateWindow(wid)
     btnEnter()
   end)
 
+  -- list of past boss fights, opened from the "Fights" entry
+  frame.fightList = CreateFrame("Frame", nil, frame)
+  frame.fightList:SetFrameStrata("HIGH")
+  frame.fightList:SetPoint("TOPLEFT", frame.btnFights, "TOPRIGHT", 4, 2)
+  frame.fightList:SetWidth(150)
+  frame.fightList:Hide()
+  frame.fightList.entries = {}
+  frame.btnFights:SetScript("OnHide", function() frame.fightList:Hide() end)
+
+  frame.ToggleFightList = function(self)
+    local list = self.fightList
+    if list:IsShown() then return list:Hide() end
+
+    local fights = ShaguDPS.fights and ShaguDPS.fights.list or {}
+    local count = math.max(1, table.getn(fights))
+
+    for i = 1, math.max(count, table.getn(list.entries)) do
+      local entry = list.entries[i]
+      if not entry and i <= count then
+        entry = CreateFrame("Button", nil, list)
+        entry:SetHeight(14)
+        entry:SetPoint("TOPLEFT", list, "TOPLEFT", 6, -6 - (i - 1) * 14)
+        entry:SetPoint("TOPRIGHT", list, "TOPRIGHT", -6, -6 - (i - 1) * 14)
+        entry.caption = entry:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+        entry.caption:SetFont(STANDARD_TEXT_FONT, 9)
+        entry.caption:SetPoint("LEFT", entry, "LEFT", 2, 0)
+        entry.caption:SetPoint("RIGHT", entry, "RIGHT", -34, 0)
+        entry.caption:SetJustifyH("LEFT")
+        entry.time = entry:CreateFontString(nil, "OVERLAY", "GameFontWhite")
+        entry.time:SetFont(STANDARD_TEXT_FONT, 9)
+        entry.time:SetPoint("RIGHT", entry, "RIGHT", -2, 0)
+        entry.time:SetJustifyH("RIGHT")
+        if ShaguDPS.classic then
+          skin.Font(entry.caption, 9)
+          skin.Font(entry.time, 9)
+          skin.MenuEntry(entry)
+        end
+        entry:SetScript("OnEnter", btnEnter)
+        entry:SetScript("OnLeave", btnLeave)
+        entry:SetScript("OnClick", function()
+          if not this.id then return end
+          config[self:GetID()].segment = 2
+          config[self:GetID()].fight = this.id
+          self.scroll = 0
+          for b in pairs(menubuttons) do self["btn" .. b]:Hide() end
+          self:Refresh(true)
+        end)
+        list.entries[i] = entry
+      end
+
+      if entry then
+        local fight = fights[i]
+        if i > count then
+          entry:Hide()
+        elseif not fight then
+          entry.id = nil
+          entry.tooltip = nil
+          entry.caption:SetText("|cff888888No boss fights yet")
+          entry.time:SetText("")
+          entry:Show()
+        else
+          local selected = config[self:GetID()].segment == 2 and config[self:GetID()].fight == fight.id
+          local color = selected and "|cffffd100" or (fight.kill and "|cffffffff" or "|cffaaaaaa")
+          entry.id = fight.id
+          entry.caption:SetText(color .. fight.name .. (fight.kill and "" or " |cff888888(wipe)"))
+          entry.time:SetText("|cffaaaaaa" .. string.format("%d:%02d", math.floor(fight.duration / 60), math.mod(math.floor(fight.duration), 60)))
+          entry.tooltip = { fight.name, { "|cffffffff" .. (fight.kill and "Kill" or "Wipe"), "|cffaaaaaaended " .. (fight.ended or "") } }
+          entry:Show()
+        end
+      end
+    end
+
+    list:SetHeight(count * 14 + 12)
+    if ShaguDPS.classic then
+      skin.Panel(list)
+    else
+      list:SetBackdrop(backdrop)
+      list:SetBackdropColor(.2,.2,.2,1)
+      list:SetBackdropBorderColor(.4,.4,.4,1)
+    end
+    list:Show()
+  end
+
   frame.btnResize = CreateFrame("Frame", nil, frame)
   frame.btnResize:SetPoint("BOTTOMRIGHT", -3, 3)
   frame.btnResize:SetWidth(12)
@@ -1222,6 +1344,7 @@ local function CreateWindow(wid)
     frame.btnHeal,
     frame.btnThreat,
     frame.btnOverall,
+    frame.btnFights,
     frame.btnCurrent
   }
 

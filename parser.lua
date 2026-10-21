@@ -101,6 +101,7 @@ local function FightStart(now)
   fight.start = now
   fight.last = now
   fight.current = 0
+  if parser.OnFightStart then parser.OnFightStart() end
 end
 
 local function FightStop(now)
@@ -109,6 +110,7 @@ local function FightStop(now)
   fight.active = nil
   fight.current = duration
   fight.total = fight.total + duration
+  if parser.OnFightEnd then parser.OnFightEnd(duration) end
 end
 
 -- duration of a segment (0: overall, 1: current) in seconds, never below 1

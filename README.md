@@ -1,4 +1,4 @@
-# ShaguDPS 4.2 for WoW 1.18.1 Clients
+# ShaguDPS 4.3 for WoW 1.18.1 Clients
 
 A very small and lightweight damage and healing meter, updated for 1.18.1 clients.
 It reads structured combat events from **ClassicAPI** or **Nampower** when they are
@@ -25,6 +25,17 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 - Unit lookups are cached per GUID, so busy raids cost less.
 - Pets and totems of group members are matched to their owner through the GUID
   (`UnitOwnerGUID` with ClassicAPI, the owner token with SuperWoW).
+
+**Boss fight history** (new in 4.3)
+- The segment menu reads *Current*, *Fights*, *Overall*. *Fights* opens the last
+  10 boss fights, newest first, with their length; wipes are greyed out.
+- A fight counts as a boss fight when someone in the group targeted a raid boss
+  (boss classification or skull level) during it. Trash fights aren't kept.
+- Picking one shows its damage and healing; chat reports name the boss, kill or
+  wipe and the fight length.
+- The history is saved per character and survives reloads and logouts. A raid
+  boss fight takes roughly 50 KB, so ten of them stay under 1 MB. *Reset Data*
+  clears it too.
 
 **Three modes** (new in 4.2)
 - *Damage* shows total damage, damage per second and share on one bar, for
