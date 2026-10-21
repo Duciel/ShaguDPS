@@ -102,6 +102,17 @@ local view_templates = {
     bar_string = "%s (%.1f%%)",
     bar_string_params = { "effective_value_persecond", "effective_percent" },
   },
+  [5] = { -- threat on the current target
+    name = "Threat",
+    sort = "normal",
+    bar_max = "best",
+    bar_val = "value",
+    bar_lower_max = nil,
+    bar_lower_val = nil,
+    chat_string = "%s (%d%%)",
+    bar_string = "%s (%d%%)",
+    bar_string_params = { "value", "threat_perc" },
+  },
 }
 
 -- panel button templates
@@ -115,6 +126,7 @@ local menubuttons = {
   ["DPS"]      = { 1, 2, 25.5,  "DPS View",        "|cffffffffShow Damage Per Second",  "view" },
   ["Heal"]     = { 2, 3, 25.5,  "Heal View",       "|cffffffffShow Healing Done",       "view" },
   ["HPS"]      = { 3, 4, 25.5,  "HPS View",        "|cffffffffShow Heal Per Second",    "view" },
+  ["Threat"]   = { 4, 5, 25.5,  "Threat View",     "|cffffffffShow threat on your target", "view" },
 }
 
 -- default colors of chat types
@@ -230,6 +242,26 @@ local function barTooltipShow()
   local segment = this.parent.segment
   local wid = this.parent:GetID()
   if not segment[this.unit] then return end
+
+  if this.glow then this.glow:Show() end
+
+  -- threat: the server's numbers for the current target
+  if config[wid].view == 5 then
+    local entry = segment[this.unit]
+    GameTooltip:AddLine(this.title .. ":")
+    if entry._pull then
+      GameTooltip:AddDoubleLine("|cffffffffYou pull aggro at", "|cffff4040" .. entry._sum)
+      GameTooltip:AddDoubleLine("|cffaaaaaaOf the tank's threat", "|cffaaaaaa" .. entry._perc .. "%")
+    else
+      GameTooltip:AddDoubleLine("|cffffffffThreat", "|cffffffff" .. entry._sum)
+      GameTooltip:AddDoubleLine("|cffffffffOf the tank's threat", "|cffffffff" .. entry._perc .. "%")
+      GameTooltip:AddDoubleLine("|cffffffffThreat Per Second", "|cffffffff" .. round(entry._tps or 0, 1))
+      if entry._tank then GameTooltip:AddLine("|cffffd100Has aggro") end
+      GameTooltip:AddLine(entry._melee and "|cffaaaaaaMelee range: pulls at 110%" or "|cffaaaaaaRanged: pulls at 130%")
+    end
+    GameTooltip:Show()
+    return
+  end
 
   SetFightTime(config[wid].segment)
   local time = ctime(segment[this.unit])
@@ -525,6 +557,9 @@ local function GetData(unitdata, values)
     values.uneffective_value_persecond = 0
   end
 
+  -- threat percent of the tank
+  values.threat_perc = unitdata["_perc"] or 0
+
   -- check pet and detect owner/unit names
   local pet  = not classes[data["classes"][values.name]] and data["classes"][values.name] ~= "__other__"
   local unit = pet and data["classes"][values.name] or values.name
@@ -545,6 +580,11 @@ local function GetData(unitdata, values)
   values.color.r = r / 4 + .4
   values.color.g = g / 4 + .4
   values.color.b = b / 4 + .4
+
+  -- the pull aggro line is red
+  if unitdata["_pull"] then
+    values.color.r, values.color.g, values.color.b = .9, .15, .15
+  end
 
   -- replace color by class colors if possible
   if classes[data["classes"][unit]] then
@@ -621,6 +661,9 @@ local function Refresh(self, force, report)
     elseif config[wid].view == 4 then
       self.btnHPS.caption:SetTextColor(1,.9,0,1)
       self.btnMode.caption:SetText("HPS")
+    elseif config[wid].view == 5 then
+      self.btnThreat.caption:SetTextColor(1,.9,0,1)
+      self.btnMode.caption:SetText("Threat")
     end
 
     if config[wid].segment == 0 then
@@ -662,6 +705,30 @@ local function Refresh(self, force, report)
     self.segment = data.damage[(config[wid].segment or 0)]
   elseif config[wid].view == 3 or config[wid].view == 4 then
     self.segment = data.heal[(config[wid].segment or 0)]
+  elseif config[wid].view == 5 then
+    self.segment = data.threat
+  end
+
+  -- threat has no segments: the segment button names the target instead
+  if config[wid].view == 5 then
+    local target = ShaguDPS.threat and ShaguDPS.threat.target
+    self.btnSegment.caption:SetText(target or "No Target")
+  elseif not force and self.lastview == 5 then
+    self.btnSegment.caption:SetText(config[wid].segment == 1 and "Current" or "Overall")
+  end
+  self.lastview = config[wid].view
+
+  -- hint while the threat list is empty
+  if config[wid].view == 5 and not next(self.segment) then
+    self.hint = self.hint or self:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    self.hint:SetPoint("TOPLEFT", self, "TOPLEFT", 8, -26)
+    self.hint:SetPoint("TOPRIGHT", self, "TOPRIGHT", -8, -26)
+    self.hint:SetJustifyH("LEFT")
+    self.hint:SetFont(STANDARD_TEXT_FONT, 10)
+    self.hint:SetText("Threat shows in a group, on an elite or boss target in combat.")
+    self.hint:Show()
+  elseif self.hint then
+    self.hint:Hide()
   end
 
   -- read view settings
@@ -856,18 +923,17 @@ local function CreateWindow(wid)
   frame.btnSegment:SetScript("OnEnter", btnEnter)
   frame.btnSegment:SetScript("OnLeave", btnLeave)
   frame.btnSegment:SetScript("OnClick", function()
-    if frame.btnCurrent:IsShown() then
-      frame.btnDamage:Hide()
-      frame.btnDPS:Hide()
-      frame.btnHeal:Hide()
-      frame.btnHPS:Hide()
+    frame.btnDamage:Hide()
+    frame.btnDPS:Hide()
+    frame.btnHeal:Hide()
+    frame.btnHPS:Hide()
+    frame.btnThreat:Hide()
+
+    -- the threat view always shows the current target
+    if frame.btnCurrent:IsShown() or config[frame:GetID()].view == 5 then
       frame.btnOverall:Hide()
       frame.btnCurrent:Hide()
     else
-      frame.btnDamage:Hide()
-      frame.btnDPS:Hide()
-      frame.btnHeal:Hide()
-      frame.btnHPS:Hide()
       frame.btnOverall:Show()
       frame.btnCurrent:Show()
     end
@@ -886,7 +952,7 @@ local function CreateWindow(wid)
   frame.btnMode.caption:SetFont(STANDARD_TEXT_FONT, 9)
   frame.btnMode.caption:SetText("Mode: Damage")
   frame.btnMode.caption:SetAllPoints()
-  frame.btnMode.tooltip = { "Select Mode", "|cffffffffDamage, DPS, Heal, HPS" }
+  frame.btnMode.tooltip = { "Select Mode", "|cffffffffDamage, DPS, Heal, HPS, Threat" }
   frame.btnMode:SetScript("OnEnter", btnEnter)
   frame.btnMode:SetScript("OnLeave", btnLeave)
   frame.btnMode:SetScript("OnClick", function()
@@ -895,6 +961,7 @@ local function CreateWindow(wid)
       frame.btnDPS:Hide()
       frame.btnHeal:Hide()
       frame.btnHPS:Hide()
+      frame.btnThreat:Hide()
       frame.btnOverall:Hide()
       frame.btnCurrent:Hide()
     else
@@ -902,6 +969,7 @@ local function CreateWindow(wid)
       frame.btnDPS:Show()
       frame.btnHeal:Show()
       frame.btnHPS:Show()
+      frame.btnThreat:Show()
       frame.btnOverall:Hide()
       frame.btnCurrent:Hide()
     end
@@ -1161,6 +1229,7 @@ local function CreateWindow(wid)
     frame.btnDPS,
     frame.btnHeal,
     frame.btnHPS,
+    frame.btnThreat,
     frame.btnOverall,
     frame.btnCurrent
   }
@@ -1211,7 +1280,7 @@ window.ApplyClassic = function(frame)
   end
 
   frame.menuSegment = MenuPanel(frame.btnCurrent, frame.btnOverall)
-  frame.menuView = MenuPanel(frame.btnDamage, frame.btnHPS)
+  frame.menuView = MenuPanel(frame.btnDamage, frame.btnThreat)
 
   for name in pairs(menubuttons) do
     local button = frame["btn" .. name]

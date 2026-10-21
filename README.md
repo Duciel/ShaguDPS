@@ -1,4 +1,4 @@
-# ShaguDPS 4.0 for WoW 1.18.1 Clients
+# ShaguDPS 4.1 for WoW 1.18.1 Clients
 
 A very small and lightweight damage and healing meter, updated for 1.18.1 clients.
 It reads structured combat events from **ClassicAPI** or **Nampower** when they are
@@ -25,6 +25,17 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 - Unit lookups are cached per GUID, so busy raids cost less.
 - Pets and totems of group members are matched to their owner through the GUID
   (`UnitOwnerGUID` with ClassicAPI, the owner token with SuperWoW).
+
+**Threat view** (new in 4.1)
+- A fifth mode next to Damage, DPS, Heal and HPS: the threat list of your current
+  target, straight from the server's threat API (the same one TWThreat uses).
+- Shows each player's threat and percent of the tank's threat, with a red
+  *Pull Aggro* line where you would take aggro: 110% of the tank in melee range,
+  130% at range. Hover a bar for threat per second and who has aggro.
+- The segment button shows the target's name in this mode.
+- Asks the server twice a second, only while a window shows threat, you are in a
+  party or raid and your target is an elite or boss in combat. If TWThreat is
+  also running, ShaguDPS reads its answers instead of asking a second time.
 
 **Per second time**
 - *Active Time* (default, as before): each unit's own time spent dealing damage.

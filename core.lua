@@ -97,6 +97,12 @@ local internals = {
   ["_tick"] = true,
   ["_esum"] = true,
   ["_effective"] = true,
+  -- threat view
+  ["_perc"] = true,
+  ["_tank"] = true,
+  ["_melee"] = true,
+  ["_tps"] = true,
+  ["_pull"] = true,
 }
 
 -- create core component frames

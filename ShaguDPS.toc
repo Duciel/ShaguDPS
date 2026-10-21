@@ -2,7 +2,7 @@
 ## Title: |cffffcc00Shagu|cffffffffDPS
 ## Author: Shagu; Duciel (Nampower parser); OEVG2 (4.0)
 ## Notes: A simple and lightweight DPS and damage meter. Reads ClassicAPI or Nampower combat events when available, the chat combat log otherwise.
-## Version: 4.0.2
+## Version: 4.1.0
 ## OptionalDeps: pfUI
 ## SavedVariablesPerCharacter: ShaguDPS_Config
 
@@ -14,6 +14,9 @@ skin.lua
 parser.lua
 parser-vanilla.lua
 parser-native.lua
+
+# threat
+threat.lua
 
 # interface
 window.lua
