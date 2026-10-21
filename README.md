@@ -1,4 +1,4 @@
-# ShaguDPS 4.1 for WoW 1.18.1 Clients
+# ShaguDPS 4.2 for WoW 1.18.1 Clients
 
 A very small and lightweight damage and healing meter, updated for 1.18.1 clients.
 It reads structured combat events from **ClassicAPI** or **Nampower** when they are
@@ -26,8 +26,16 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 - Pets and totems of group members are matched to their owner through the GUID
   (`UnitOwnerGUID` with ClassicAPI, the owner token with SuperWoW).
 
+**Three modes** (new in 4.2)
+- *Damage* shows total damage, damage per second and share on one bar, for
+  example `37.0k (2388.4, 62.1%)`; *Heal* does the same for effective healing,
+  with overhealing as the lighter bar behind it. Large numbers are shortened
+  (`37.0k`, `1.23m`); chat reports use full numbers.
+- Windows that showed DPS or HPS switch to Damage or Heal.
+- Fixed the Lua error when sending the heal report to chat.
+
 **Threat view** (new in 4.1)
-- A fifth mode next to Damage, DPS, Heal and HPS: the threat list of your current
+- A third mode next to Damage and Heal: the threat list of your current
   target, straight from the server's threat API (the same one TWThreat uses).
 - Shows each player's threat and percent of the tank's threat, with a red
   *Pull Aggro* line where you would take aggro: 110% of the tank in melee range,

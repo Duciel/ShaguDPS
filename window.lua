@@ -58,49 +58,29 @@ local backdrop_border = {
 
 -- templates describing the window contents
 local view_templates = {
-  [1] = { -- damage
+  [1] = { -- damage: total, per second and share in one bar
     name = "Damage",
     sort = "normal",
     bar_max = "best",
     bar_val = "value",
     bar_lower_max = nil,
     bar_lower_val = nil,
-    chat_string = "%s (%.1f%%)",
-    bar_string = "%s (%.1f%%)",
-    bar_string_params = { "value", "percent" },
+    chat_string = "%s (%s, %.1f%%)",
+    bar_string = "%s (%s, %.1f%%)",
+    bar_string_params = { "value_short", "persecond_short", "percent" },
+    chat_string_params = { "value", "value_persecond", "percent" },
   },
-  [2] = { -- dps
-    name = "DPS",
-    sort = "per_second",
-    bar_max = "persecond_best",
-    bar_val = "value_persecond",
-    bar_lower_max = nil,
-    bar_lower_val = nil,
-    chat_string = "%s (%.1f%%)",
-    bar_string = "%s (%.1f%%)",
-    bar_string_params = { "value_persecond", "percent_persecond" },
-  },
-  [3] = { -- heal
+  [3] = { -- heal: effective total, per second and share; overheal as the light bar
     name = "Heal",
     sort = "normal",
     bar_max = "best",
     bar_val = "effective_value",
     bar_lower_max = "best",
     bar_lower_val = "value",
-    chat_string = "[+%s] %s (%.1f%%)",
-    bar_string = "%s (%.1f%%)",
-    bar_string_params = { "effective_value", "effective_percent" },
-  },
-  [4] = { -- hps
-    name = "HPS",
-    sort = "per_second",
-    bar_max = "persecond_best",
-    bar_val = "effective_value_persecond",
-    bar_lower_max = "persecond_best",
-    bar_lower_val = "value_persecond",
-    chat_string = "[+%s] %s (%.1f%%)",
-    bar_string = "%s (%.1f%%)",
-    bar_string_params = { "effective_value_persecond", "effective_percent" },
+    chat_string = "%s (%s, %.1f%%) [+%s overheal]",
+    bar_string = "%s (%s, %.1f%%)",
+    bar_string_params = { "effective_short", "effective_persecond_short", "effective_percent" },
+    chat_string_params = { "effective_value", "effective_value_persecond", "effective_percent", "uneffective_value" },
   },
   [5] = { -- threat on the current target
     name = "Threat",
@@ -110,10 +90,27 @@ local view_templates = {
     bar_lower_max = nil,
     bar_lower_val = nil,
     chat_string = "%s (%d%%)",
-    bar_string = "%s (%d%%)",
-    bar_string_params = { "value", "threat_perc" },
+    bar_string = "%s (%s%%)",
+    bar_string_params = { "value_short", "threat_perc" },
+    chat_string_params = { "value", "threat_perc" },
   },
 }
+
+-- views of older versions: DPS (2) and HPS (4) are part of Damage and Heal now
+local view_merged = { [2] = 1, [4] = 3 }
+
+-- 1234 -> "1234", 12345 -> "12.3k", 1234567 -> "1.23m"
+local function short(value)
+  value = value or 0
+  if value >= 1000000 then
+    return string.format("%.2fm", value / 1000000)
+  elseif value >= 10000 then
+    return string.format("%.1fk", value / 1000)
+  elseif value == math.floor(value) then
+    return tostring(value)
+  end
+  return string.format("%.1f", value)
+end
 
 -- panel button templates
 local menubuttons = {
@@ -122,11 +119,9 @@ local menubuttons = {
   ["Overall"]  = { 1, 0, -25.5, "Overall Segment", "|cffffffffShow all fights",         "segment" },
 
   -- modes
-  ["Damage"]   = { 0, 1, 25.5,  "Damage View",     "|cffffffffShow Damage Done",        "view" },
-  ["DPS"]      = { 1, 2, 25.5,  "DPS View",        "|cffffffffShow Damage Per Second",  "view" },
-  ["Heal"]     = { 2, 3, 25.5,  "Heal View",       "|cffffffffShow Healing Done",       "view" },
-  ["HPS"]      = { 3, 4, 25.5,  "HPS View",        "|cffffffffShow Heal Per Second",    "view" },
-  ["Threat"]   = { 4, 5, 25.5,  "Threat View",     "|cffffffffShow threat on your target", "view" },
+  ["Damage"]   = { 0, 1, 25.5,  "Damage View",     "|cffffffffDamage done and damage per second", "view" },
+  ["Heal"]     = { 1, 3, 25.5,  "Heal View",       "|cffffffffHealing done and heal per second", "view" },
+  ["Threat"]   = { 2, 5, 25.5,  "Threat View",     "|cffffffffThreat on your target", "view" },
 }
 
 -- default colors of chat types
@@ -272,10 +267,10 @@ local function barTooltipShow()
 
   GameTooltip:AddLine(this.title .. ":")
 
-  if config[wid].view == 1 or config[wid].view == 2 then
+  if config[wid].view == 1 then
     GameTooltip:AddDoubleLine("|cffffffffDamage", "|cffffffff" .. value)
     GameTooltip:AddDoubleLine("|cffffffffDamage Per Second", "|cffffffff" .. persec)
-  elseif config[wid].view == 3 or config[wid].view == 4 then
+  elseif config[wid].view == 3 then
     local evalue = segment[this.unit]["_esum"]
     local epersec = round(evalue / time, 1)
 
@@ -560,6 +555,12 @@ local function GetData(unitdata, values)
   -- threat percent of the tank
   values.threat_perc = unitdata["_perc"] or 0
 
+  -- short numbers for the bars
+  values.value_short = short(values.value)
+  values.persecond_short = short(values.value_persecond)
+  values.effective_short = short(values.effective_value)
+  values.effective_persecond_short = short(values.effective_value_persecond)
+
   -- check pet and detect owner/unit names
   local pet  = not classes[data["classes"][values.name]] and data["classes"][values.name] ~= "__other__"
   local unit = pet and data["classes"][values.name] or values.name
@@ -611,6 +612,11 @@ local function Refresh(self, force, report)
   local values, buttons = self.values, self.buttons
   local wid = self:GetID()
 
+  -- DPS and HPS windows of older versions become Damage and Heal
+  local view = config[wid].view
+  if view_merged[view] then config[wid].view = view_merged[view] end
+  if not view_templates[config[wid].view] then config[wid].view = 1 end
+
   -- config changes
   if force then
     if config.visible == 1 then
@@ -652,15 +658,9 @@ local function Refresh(self, force, report)
     if config[wid].view == 1 then
       self.btnDamage.caption:SetTextColor(1,.9,0,1)
       self.btnMode.caption:SetText("Damage")
-    elseif config[wid].view == 2 then
-      self.btnDPS.caption:SetTextColor(1,.9,0,1)
-      self.btnMode.caption:SetText("DPS")
     elseif config[wid].view == 3 then
       self.btnHeal.caption:SetTextColor(1,.9,0,1)
       self.btnMode.caption:SetText("Heal")
-    elseif config[wid].view == 4 then
-      self.btnHPS.caption:SetTextColor(1,.9,0,1)
-      self.btnMode.caption:SetText("HPS")
     elseif config[wid].view == 5 then
       self.btnThreat.caption:SetTextColor(1,.9,0,1)
       self.btnMode.caption:SetText("Threat")
@@ -701,9 +701,9 @@ local function Refresh(self, force, report)
   end
 
   -- set view to damage or heal
-  if config[wid].view == 1 or config[wid].view == 2 then
+  if config[wid].view == 1 then
     self.segment = data.damage[(config[wid].segment or 0)]
-  elseif config[wid].view == 3 or config[wid].view == 4 then
+  elseif config[wid].view == 3 then
     self.segment = data.heal[(config[wid].segment or 0)]
   elseif config[wid].view == 5 then
     self.segment = data.threat
@@ -732,8 +732,6 @@ local function Refresh(self, force, report)
   end
 
   -- read view settings
-  local view_effective  = (config[wid].view == 3 or config[wid].view == 4) and true or nil
-  local view_per_second = (config[wid].view == 2 or config[wid].view == 4) and true or nil
 
   local template = view_templates[config[wid].view]
   local sort = sort_algorithms[template.sort]
@@ -803,8 +801,9 @@ local function Refresh(self, force, report)
 
     -- report to chat if flag is set
     if report and i <= 10 then
+      local c = template.chat_string_params or a
       local chat = string.format(template.chat_string,
-        self.values[a[1]], self.values[a[2]], self.values[a[3]], self.values[a[4]], self.values[a[5]])
+        self.values[c[1]], self.values[c[2]], self.values[c[3]], self.values[c[4]], self.values[c[5]])
 
       announce(i .. ". " .. self.values.name .. " " .. chat)
     end
@@ -924,9 +923,7 @@ local function CreateWindow(wid)
   frame.btnSegment:SetScript("OnLeave", btnLeave)
   frame.btnSegment:SetScript("OnClick", function()
     frame.btnDamage:Hide()
-    frame.btnDPS:Hide()
     frame.btnHeal:Hide()
-    frame.btnHPS:Hide()
     frame.btnThreat:Hide()
 
     -- the threat view always shows the current target
@@ -952,23 +949,19 @@ local function CreateWindow(wid)
   frame.btnMode.caption:SetFont(STANDARD_TEXT_FONT, 9)
   frame.btnMode.caption:SetText("Mode: Damage")
   frame.btnMode.caption:SetAllPoints()
-  frame.btnMode.tooltip = { "Select Mode", "|cffffffffDamage, DPS, Heal, HPS, Threat" }
+  frame.btnMode.tooltip = { "Select Mode", "|cffffffffDamage, Heal, Threat" }
   frame.btnMode:SetScript("OnEnter", btnEnter)
   frame.btnMode:SetScript("OnLeave", btnLeave)
   frame.btnMode:SetScript("OnClick", function()
     if frame.btnDamage:IsShown() then
       frame.btnDamage:Hide()
-      frame.btnDPS:Hide()
-      frame.btnHeal:Hide()
-      frame.btnHPS:Hide()
-      frame.btnThreat:Hide()
+        frame.btnHeal:Hide()
+        frame.btnThreat:Hide()
       frame.btnOverall:Hide()
       frame.btnCurrent:Hide()
     else
       frame.btnDamage:Show()
-      frame.btnDPS:Show()
       frame.btnHeal:Show()
-      frame.btnHPS:Show()
       frame.btnThreat:Show()
       frame.btnOverall:Hide()
       frame.btnCurrent:Hide()
@@ -1226,9 +1219,7 @@ local function CreateWindow(wid)
   frame.values = {}
   frame.buttons = {
     frame.btnDamage,
-    frame.btnDPS,
     frame.btnHeal,
-    frame.btnHPS,
     frame.btnThreat,
     frame.btnOverall,
     frame.btnCurrent
