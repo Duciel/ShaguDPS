@@ -70,6 +70,8 @@ local config = {
   -- tracking
   track_all_units = 0,
   merge_pets = 1,
+  source = 1,     -- 1: auto, 2: ClassicAPI, 3: Nampower, 4: chat combat log
+  time_mode = 0,  -- 0: active time per unit, 1: fight duration for everyone
 
   -- appearance
   visible = 1,
@@ -77,6 +79,7 @@ local config = {
   texture = 2,
   pastel = 0,
   lock = 0,
+  theme = 1,      -- 1: classic Blizzard look, 0: original flat look
 }
 
 local internals = {
@@ -102,3 +105,18 @@ ShaguDPS.internals = internals
 ShaguDPS.parser = parser
 ShaguDPS.round = round
 ShaguDPS.expansion = expansion
+
+-- the theme is read once when the frames are built, so switching it needs a reload
+StaticPopupDialogs["SHAGUDPS_RELOAD"] = {
+  text = "ShaguDPS: the new theme needs a UI reload. Reload now?",
+  button1 = ACCEPT,
+  button2 = CANCEL,
+  OnAccept = function() ReloadUI() end,
+  timeout = 0,
+  whileDead = 1,
+  hideOnEscape = 1,
+}
+
+-- the active theme: nil until the saved variables are loaded, then true for the
+-- classic look. Frames built before that get their skin once it is known.
+ShaguDPS.classic = nil

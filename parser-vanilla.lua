@@ -385,10 +385,6 @@ local combatlog_parser = {
   end,
 }
 
--- register to all combat log events
-for event in pairs(combatlog_events) do
-  parser:RegisterEvent(event)
-end
 
 -- preload all combat log patterns
 for pattern in pairs(combatlog_parser) do
@@ -410,7 +406,7 @@ local empty, physical, autohit = "", "physical", "Auto Hit"
 local player = UnitName("player")
 
 -- call all datasources on each event
-parser:SetScript("OnEvent", function()
+local function OnEvent()
   if not arg1 then return end
 
   -- remove absorb and resist suffixes
@@ -433,4 +429,15 @@ parser:SetScript("OnEvent", function()
       return parser:AddData(combatlog_parser[pattern](defaults, a1, a2, a3, a4, a5))
     end
   end
-end)
+end
+
+-- the chat combat log works on every client and is the fallback source
+parser:RegisterSource("combatlog", {
+  available = function() return true end,
+  enable = function()
+    for event in pairs(combatlog_events) do
+      parser:RegisterEvent(event)
+    end
+    parser:SetScript("OnEvent", OnEvent)
+  end,
+})

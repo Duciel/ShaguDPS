@@ -12,6 +12,18 @@ local internals = ShaguDPS.internals
 local textures = ShaguDPS.textures
 local spairs = ShaguDPS.spairs
 local round = ShaguDPS.round
+local skin = ShaguDPS.skin
+
+-- time used for "per second" values: each unit's own active time, or with the
+-- "Fight Duration" time mode the time the whole segment lasted (set by Refresh)
+local fight_time = nil
+local function ctime(unitdata)
+  return fight_time or unitdata["_ctime"]
+end
+
+local function SetFightTime(segment)
+  fight_time = config.time_mode == 1 and parser:GetFightTime(segment or 1) or nil
+end
 
 -- all known classes
 local classes = {
@@ -125,9 +137,9 @@ local sort_algorithms = {
   end,
   per_second = function(t,a,b)
     if t[a]["_esum"] and t[b]["_esum"] and t[a]["_esum"] ~= t[b]["_esum"] then
-      return t[b]["_esum"] / t[b]["_ctime"] < t[a]["_esum"] / t[a]["_ctime"]
+      return t[b]["_esum"] / ctime(t[b]) < t[a]["_esum"] / ctime(t[a])
     else
-      return t[b]["_sum"] / t[b]["_ctime"] < t[a]["_sum"] / t[a]["_ctime"]
+      return t[b]["_sum"] / ctime(t[b]) < t[a]["_sum"] / ctime(t[a])
     end
   end,
   single_spell = function(t,a,b)
@@ -186,9 +198,15 @@ local function barTooltipShow()
   GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
 
   local segment = this.parent.segment
-  local value = segment[this.unit]["_sum"]
-  local persec = round(segment[this.unit]["_sum"] / segment[this.unit]["_ctime"], 1)
   local wid = this.parent:GetID()
+  if not segment[this.unit] then return end
+
+  SetFightTime(config[wid].segment)
+  local time = ctime(segment[this.unit])
+  local value = segment[this.unit]["_sum"]
+  local persec = round(value / time, 1)
+
+  if this.glow then this.glow:Show() end
 
   GameTooltip:AddLine(this.title .. ":")
 
@@ -197,13 +215,23 @@ local function barTooltipShow()
     GameTooltip:AddDoubleLine("|cffffffffDamage Per Second", "|cffffffff" .. persec)
   elseif config[wid].view == 3 or config[wid].view == 4 then
     local evalue = segment[this.unit]["_esum"]
-    local epersec = round(evalue / segment[this.unit]["_ctime"], 1)
+    local epersec = round(evalue / time, 1)
 
     GameTooltip:AddDoubleLine("|cffffffffHealing", "|cffffffff" .. evalue)
     GameTooltip:AddDoubleLine("|cffaaaaaaOverheal", "|cffcc8888+" .. value - evalue)
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine("|cffffffffHealing Per Second", "|cffffffff" .. epersec)
     GameTooltip:AddDoubleLine("|cffaaaaaaOverheal Per Second", "|cffcc8888+" .. persec - epersec)
+  end
+
+  -- active time vs. fight duration
+  local active = segment[this.unit]["_ctime"] or 1
+  if config.time_mode == 1 then
+    GameTooltip:AddDoubleLine("|cffaaaaaaFight Duration", "|cffaaaaaa" .. SecondsToTime(math.floor(time)))
+    GameTooltip:AddDoubleLine("|cffaaaaaaActive Time", "|cffaaaaaa" .. SecondsToTime(math.floor(active)) ..
+      string.format(" (%d%%)", math.min(100, active / time * 100)))
+  else
+    GameTooltip:AddDoubleLine("|cffaaaaaaActive Time", "|cffaaaaaa" .. SecondsToTime(math.floor(active)))
   end
 
   GameTooltip:AddLine(" ")
@@ -230,6 +258,7 @@ local function barTooltipShow()
 end
 
 local function barTooltipHide()
+  if this.glow then this.glow:Hide() end
   GameTooltip:Hide()
 end
 
@@ -273,12 +302,16 @@ local function ResetData()
     if window[i] then window[i].scroll = 0 end
   end
 
+  -- reset the fight timers too
+  parser:ResetFight(true)
+
   -- reload all windows
   window.Refresh()
 end
 
 local function CreateBar(parent, i, background)
-  parent.bars[i] = parent.bars[i] or CreateFrame("StatusBar", "ShaguDPSBar" .. i, parent)
+  local prefix = "ShaguDPS" .. (parent:GetID() == 1 and "" or parent:GetID())
+  parent.bars[i] = parent.bars[i] or CreateFrame("StatusBar", prefix .. "Bar" .. i, parent)
   parent.bars[i].parent = parent
 
   parent.bars[i]:SetStatusBarTexture(textures[config.texture] or textures[1])
@@ -287,7 +320,7 @@ local function CreateBar(parent, i, background)
   parent.bars[i]:SetHeight(config.height - config.spacing)
   parent.bars[i]:SetFrameLevel(4)
 
-  parent.bars[i].lowerBar = parent.bars[i].lowerBar or CreateFrame("StatusBar", "ShaguDPSLowerBar" .. i, parent)
+  parent.bars[i].lowerBar = parent.bars[i].lowerBar or CreateFrame("StatusBar", prefix .. "LowerBar" .. i, parent)
   parent.bars[i].lowerBar:SetStatusBarTexture(textures[config.texture] or textures[1])
   parent.bars[i].lowerBar:SetPoint("TOPLEFT", parent, "TOPLEFT", 2, -config.height * (i-1) - 22)
   parent.bars[i].lowerBar:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -2, -config.height * (i-1) - 22)
@@ -313,6 +346,33 @@ local function CreateBar(parent, i, background)
   parent.bars[i].textRight:SetPoint("TOPLEFT", parent.bars[i], "TOPLEFT", 5, 1)
   parent.bars[i].textRight:SetPoint("BOTTOMRIGHT", parent.bars[i], "BOTTOMRIGHT", -5, 0)
 
+  -- classic: shadowed text, a dark track behind the bar and a hover glow
+  local bar = parent.bars[i]
+  if ShaguDPS.classic then
+    local size = math.max(8, math.min(13, config.height - 4))
+    skin.Font(bar.textLeft, size)
+    skin.Font(bar.textRight, size)
+    bar.textLeft:SetTextColor(1, 1, 1)
+    bar.textRight:SetTextColor(1, 1, 1)
+
+    -- the track sits below the overheal bar, and follows the bar's visibility
+    if not bar.track then
+      bar.track = CreateFrame("Frame", nil, parent)
+      bar.track:SetFrameLevel(1)
+      bar.track.tex = bar.track:CreateTexture(nil, "BACKGROUND")
+      bar.track.tex:SetAllPoints(bar.track)
+      bar:SetScript("OnShow", function() this.track:Show() end)
+      bar:SetScript("OnHide", function() this.track:Hide() end)
+    end
+    bar.track:SetAllPoints(bar)
+    bar.track.tex:SetTexture(textures[config.texture] or textures[1])
+    bar.track.tex:SetVertexColor(0.2, 0.2, 0.2, 0.35)
+    if not bar:IsShown() then bar.track:Hide() end
+
+    bar.glow = bar.glow or skin.Glow(bar, "OVERLAY", 0.35)
+    bar.glow:Hide()
+  end
+
   parent.bars[i]:EnableMouse(true)
   parent.bars[i]:SetScript("OnEnter", barTooltipShow)
   parent.bars[i]:SetScript("OnLeave", barTooltipHide)
@@ -333,6 +393,7 @@ local function btnEnter()
     GameTooltip:Show()
   end
 
+  if this.hoverOn then return this:hoverOn() end
   this:SetBackdropBorderColor(1,.8,0,1)
 end
 
@@ -341,6 +402,7 @@ local function btnLeave()
     GameTooltip:Hide()
   end
 
+  if this.hoverOff then return this:hoverOff() end
   this:SetBackdropBorderColor(.4,.4,.4,1)
 end
 
@@ -377,27 +439,29 @@ local function GetCaps(view, values)
 
     -- calculate normal values
     if data["_sum"] and data["_ctime"] then
+      local time = ctime(data)
       values.all = values.all + data["_sum"]
       if data["_sum"] > values.best then
         values.best = data["_sum"]
       end
 
-      values.persecond_all = values.persecond_all + data["_sum"] / data["_ctime"]
-      if data["_sum"] / data["_ctime"] > values.persecond_best then
-        values.persecond_best = data["_sum"] / data["_ctime"]
+      values.persecond_all = values.persecond_all + data["_sum"] / time
+      if data["_sum"] / time > values.persecond_best then
+        values.persecond_best = data["_sum"] / time
       end
     end
 
     -- calculate effective values
     if data["_esum"] and data["_ctime"] then
+      local time = ctime(data)
       values.effective_all = values.effective_all + data["_esum"]
-      if data["_esum"] > values.effective_all then
-        values.persecond_best = data["_esum"]
+      if data["_esum"] > values.effective_best then
+        values.effective_best = data["_esum"]
       end
 
-      values.effective_persecond_all = values.effective_persecond_all + data["_esum"] / data["_ctime"]
-      if data["_esum"] / data["_ctime"] > values.effective_persecond_best then
-        values.effective_persecond_best = data["_esum"] / data["_ctime"]
+      values.effective_persecond_all = values.effective_persecond_all + data["_esum"] / time
+      if data["_esum"] / time > values.effective_persecond_best then
+        values.effective_persecond_best = data["_esum"] / time
       end
     end
   end
@@ -410,14 +474,14 @@ local function GetData(unitdata, values)
 
   -- read normal values
   values.value = unitdata["_sum"]
-  values.value_persecond = round(values.value / unitdata["_ctime"], 1)
+  values.value_persecond = round(values.value / ctime(unitdata), 1)
   values.percent = values.value == 0 and 0 or round(values.value / values.all * 100,1)
   values.percent_persecond = values.value_persecond == 0 and 0 or round(values.value_persecond / values.persecond_all * 100, 1)
 
   -- read effective values
   if unitdata["_esum"] then
     values.effective_value = unitdata["_esum"]
-    values.effective_value_persecond = round(values.effective_value / unitdata["_ctime"], 1)
+    values.effective_value_persecond = round(values.effective_value / ctime(unitdata), 1)
     values.effective_percent = values.effective_value == 0 and 0 or round(values.effective_value / values.effective_all * 100, 1)
     values.effective_percent_persecond = values.effective_value_persecond == 0 and 0 or round(values.effective_value_persecond / values.effective_persecond_all * 100,1)
     values.uneffective_value = values.value - values.effective_value
@@ -437,7 +501,9 @@ local function GetData(unitdata, values)
 
   -- merge pet/owner strings if option is set
   if config.merge_pets == 0 then
-    values.name = pet and unit .. " - " .. values.name or unit
+    -- "Wolf (Hunter)" becomes "Hunter - Wolf"
+    local petname = pet and string.gsub(values.name, "%s%(.-%)$", "") or nil
+    values.name = pet and unit .. " - " .. petname or unit
   else
     values.name = unit
   end
@@ -487,8 +553,19 @@ local function Refresh(self, force, report)
       button.caption:SetTextColor(1,1,1,1)
     end
 
+    if self.titleRule then
+      if config.backdrop == 1 then self.titleRule:Show() else self.titleRule:Hide() end
+    end
+
     -- update backdrop borders
-    if config.backdrop == 1 then
+    if config.backdrop == 1 and ShaguDPS.classic then
+      local c = skin.colors
+      self:SetBackdrop(skin.backdrop_window)
+      self:SetBackdropColor(c.bg[1], c.bg[2], c.bg[3], .9)
+
+      self.border:SetBackdrop(skin.backdrop_border)
+      self.border:SetBackdropBorderColor(c.border[1], c.border[2], c.border[3], 1)
+    elseif config.backdrop == 1 then
       -- window background
       self:SetBackdrop(backdrop_window)
       self:SetBackdropColor(.5,.5,.5,.5)
@@ -556,6 +633,7 @@ local function Refresh(self, force, report)
   end
 
   -- load caps of the current view
+  SetFightTime(config[wid].segment)
   self.values = self.GetCaps(self.segment, self.values)
 
   local i = 1
@@ -594,6 +672,11 @@ local function Refresh(self, force, report)
         self.values[a[1]], self.values[a[2]], self.values[a[3]], self.values[a[4]], self.values[a[5]])
 
       self.bars[bar].textRight:SetText(line)
+
+      -- keep long names from running into the values
+      self.bars[bar].textLeft:SetPoint("BOTTOMRIGHT", self.bars[bar], "BOTTOMRIGHT",
+        -math.ceil(self.bars[bar].textRight:GetStringWidth() or 0) - 10, 0)
+
       self.bars[bar]:Show()
 
       -- report to chat if flag is set
@@ -931,6 +1014,12 @@ local function CreateWindow(wid)
     frame.btnWindow:SetScript("OnClick", function()
       for i=1,10 do
         if not ShaguDPS.window[i] then
+          -- new windows start with the size and view of the first one
+          config[i] = {
+            width = config[1].width, bars = config[1].bars,
+            view = config[1].view, segment = config[1].segment,
+          }
+
           ShaguDPS.window[i] = CreateWindow(i)
           ShaguDPS.window.Refresh(true)
           return
@@ -999,7 +1088,62 @@ local function CreateWindow(wid)
     frame.needs_refresh = true
   end)
 
+  if ShaguDPS.classic then window.ApplyClassic(frame) end
+
   return frame
+end
+
+-- classic theme: no boxes around the title buttons, gold text and icons,
+-- a silver rule under the title and the dropdown lists as tooltip panels
+window.ApplyClassic = function(frame)
+  if frame.classic then return end
+  frame.classic = true
+
+  frame.title:SetTexture(0, 0, 0, 0)
+
+  frame.titleRule = skin.Rule(frame)
+  frame.titleRule:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -21)
+  frame.titleRule:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -6, -21)
+  frame.titleRule:SetFrameLevel(frame:GetFrameLevel() + 3)
+
+  skin.IconButton(frame.btnAnnounce)
+  skin.IconButton(frame.btnSettings)
+  skin.IconButton(frame.btnReset)
+  skin.IconButton(frame.btnWindow)
+  skin.TextButton(frame.btnSegment, 10)
+  skin.TextButton(frame.btnMode, 10)
+
+  -- one tooltip panel behind each dropdown list
+  local function MenuPanel(first, last)
+    local panel = CreateFrame("Frame", nil, frame)
+    panel:SetFrameStrata("HIGH")
+    panel:SetFrameLevel(first:GetFrameLevel() > 1 and first:GetFrameLevel() - 1 or 1)
+    panel:SetPoint("TOPLEFT", first, "TOPLEFT", -6, 6)
+    panel:SetPoint("BOTTOMRIGHT", last, "BOTTOMRIGHT", 6, -6)
+    skin.Panel(panel)
+    panel:Hide()
+
+    first:SetScript("OnShow", function() panel:Show() end)
+    first:SetScript("OnHide", function() panel:Hide() end)
+    return panel
+  end
+
+  frame.menuSegment = MenuPanel(frame.btnCurrent, frame.btnOverall)
+  frame.menuView = MenuPanel(frame.btnDamage, frame.btnHPS)
+
+  for name in pairs(menubuttons) do
+    local button = frame["btn" .. name]
+    button:SetFrameLevel(frame.menuView:GetFrameLevel() + 2)
+    skin.MenuEntry(button)
+  end
+end
+
+-- the theme is known once the saved variables are loaded
+window.ApplyTheme = function()
+  if not ShaguDPS.classic then return end
+  for i=1,10 do
+    if window[i] then window.ApplyClassic(window[i]) end
+  end
 end
 
 -- make sure to always create first window

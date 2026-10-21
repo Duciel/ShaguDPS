@@ -70,6 +70,45 @@ local function combat()
 end
 
 local start_next_segment = nil
+
+-- fight timer: the time a fight lasted, shared by everyone in it. Used for the
+-- "Fight Duration" time mode instead of each unit's own active time.
+local fight = { active = nil, start = 0, last = 0, current = 0, total = 0 }
+parser.fight = fight
+
+local function FightStart(now)
+  fight.active = true
+  fight.start = now
+  fight.last = now
+  fight.current = 0
+end
+
+local function FightStop(now)
+  if not fight.active then return end
+  local duration = math.max(0, now - fight.start)
+  fight.active = nil
+  fight.current = duration
+  fight.total = fight.total + duration
+end
+
+-- duration of a segment (0: overall, 1: current) in seconds, never below 1
+parser.GetFightTime = function(self, segment)
+  local running = fight.active and (GetTime() - fight.start) or 0
+  local time
+  if segment == 0 then
+    time = fight.total + running
+  else
+    time = fight.active and running or fight.current
+  end
+  return math.max(1, time)
+end
+
+parser.ResetFight = function(self, overall)
+  fight.active = nil
+  fight.current = 0
+  if overall then fight.total = 0 end
+end
+
 parser.combat = CreateFrame("Frame", "ShaguDPSCombatState", UIParent)
 parser.combat:RegisterEvent("PLAYER_REGEN_DISABLED")
 parser.combat:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -82,7 +121,12 @@ parser.combat.UpdateState = function(self)
 
     if state == "NO_COMBAT" then
       start_next_segment = true
+      FightStop(GetTime())
     end
+  elseif state == "NO_COMBAT" and fight.active and fight.last + 5 < GetTime() then
+    -- data that came in while nobody was in combat (a heal or a dot after the
+    -- fight): close that short segment at its last event
+    FightStop(fight.last)
   end
 end
 
@@ -95,6 +139,13 @@ end)
 parser.combat:SetScript("OnUpdate", function()
   if ( this.tick or 1) > GetTime() then return else this.tick = GetTime() + 1 end
   this:UpdateState()
+
+  -- keep "fight duration" windows ticking while a fight runs
+  if fight.active and config.time_mode == 1 then
+    for id, callback in pairs(parser.callbacks.refresh) do
+      callback()
+    end
+  end
 end)
 
 parser.ScanName = function(self, name)
@@ -165,6 +216,7 @@ parser.AddData = function(self, source, action, target, value, school, datatype)
     data["heal"][1] = {}
 
     start_next_segment = nil
+    FightStart(GetTime())
   end
 
   -- calculate effective value (heal)
@@ -209,7 +261,8 @@ parser.AddData = function(self, source, action, target, value, school, datatype)
       -- remove pet data
       entry[source] = nil
 
-      action = "Pet: " .. source
+      -- "Wolf (Hunter)" from the GUID-based sources is shown as "Pet: Wolf"
+      action = "Pet: " .. string.gsub(source, "%s%(.-%)$", "")
       source = data["classes"][source]
 
       -- write data into owner
@@ -230,6 +283,12 @@ parser.AddData = function(self, source, action, target, value, school, datatype)
         -- write effective healing per spell
         entry[source]["_effective"] = entry[source]["_effective"] or {}
         entry[source]["_effective"][action] = (entry[source]["_effective"][action] or 0) + tonumber(effective)
+      end
+
+      -- the first data of a session starts the fight timer too
+      if segment == 1 then
+        if not fight.active then FightStart(GetTime()) end
+        fight.last = GetTime()
       end
 
       entry[source]["_ctime"] = entry[source]["_ctime"] or 1
@@ -253,3 +312,54 @@ end
 parser.callbacks = {
   ["refresh"] = {}
 }
+
+-- data sources: each parser file registers one. Only one is active at a time,
+-- picked by the "source" setting (1: best available, then a forced one).
+--   available() returns true when the client can feed it
+--   enable() registers its events and sets parser's OnEvent handler
+local source_order = { "classicapi", "nampower", "combatlog" }
+local source_ids = { classicapi = 2, nampower = 3, combatlog = 4 }
+
+parser.sources = {}
+parser.source_labels = {
+  classicapi = "ClassicAPI",
+  nampower = "Nampower",
+  combatlog = "Chat Combat Log",
+}
+
+parser.RegisterSource = function(self, name, source)
+  self.sources[name] = source
+end
+
+parser.SelectSource = function(self)
+  local wanted = config.source or 1
+  local pick
+
+  for _, name in pairs(source_order) do
+    local src = self.sources[name]
+    if src and (wanted == 1 or source_ids[name] == wanted) and src.available() then
+      pick = name
+      break
+    end
+  end
+
+  -- a forced source that is missing falls back to the best available one
+  if not pick then
+    for _, name in pairs(source_order) do
+      local src = self.sources[name]
+      if src and src.available() then pick = name break end
+    end
+  end
+
+  if pick == self.active_source then return pick end
+
+  self:UnregisterAllEvents()
+  self:SetScript("OnEvent", nil)
+  if self.active_source and self.sources[self.active_source].disable then
+    self.sources[self.active_source].disable()
+  end
+
+  self.active_source = pick
+  if pick then self.sources[pick].enable() end
+  return pick
+end
