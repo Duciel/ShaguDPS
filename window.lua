@@ -77,10 +77,10 @@ local view_templates = {
     bar_val = "effective_value",
     bar_lower_max = "best",
     bar_lower_val = "value",
-    chat_string = "%s (%s HPS, %.1f%%)",
+    chat_string = "%s (%s HPS, %.1f%%) [+%s overheal]",
     bar_string = "%s (%s HPS, %.1f%%)",
     bar_string_params = { "effective_short", "effective_persecond_short", "effective_percent" },
-    chat_string_params = { "effective_value", "effective_value_persecond", "effective_percent" },
+    chat_string_params = { "effective_value", "effective_value_persecond", "effective_percent", "uneffective_value" },
   },
   [5] = { -- threat on the current target
     name = "Threat",
