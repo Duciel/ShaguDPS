@@ -21,6 +21,11 @@ local function ctime(unitdata)
   return fight_time or unitdata["_ctime"]
 end
 
+-- title row: two icons left, three right, so the two text buttons sit a bit
+-- left of the center and the window needs this much width
+local MIN_WIDTH = 186
+local TITLE_SHIFT = -8.5
+
 local function SetFightTime(segment)
   fight_time = config.time_mode == 1 and parser:GetFightTime(segment or 1) or nil
 end
@@ -192,6 +197,31 @@ local function spairs(t, order)
       return keys[i], t[keys[i]]
     end
   end
+end
+
+-- sorted keys of a segment without building a new table and closure on every
+-- refresh: each window keeps its own buffer
+local function SortedKeys(self, t, order)
+  local keys = self.sortkeys
+  if not keys then
+    keys = {}
+    self.sortkeys = keys
+    self.sortcmp = function(a, b) return self.sortorder(self.sorttable, a, b) end
+  end
+
+  local n = 0
+  for k in pairs(t) do
+    n = n + 1
+    keys[n] = k
+  end
+
+  for j = n + 1, table.getn(keys) do keys[j] = nil end
+  if table.setn then table.setn(keys, n) end
+
+  self.sorttable, self.sortorder = t, order
+  table.sort(keys, self.sortcmp)
+  self.sorttable = nil
+  return keys, n
 end
 
 local function barTooltipShow()
@@ -601,8 +631,24 @@ local function Refresh(self, force, report)
       self.btnSegment.caption:SetText("Current")
     end
 
-    self:SetWidth((config[wid].width or 177))
+    -- lock icon of the title row
+    if self.btnLock then
+      local locked = config.lock == 1
+      self.btnLock.tex:SetTexture("Interface\\AddOns\\ShaguDPS\\img\\" .. (locked and "lock" or "unlock"))
+      self.btnLock.tooltip = {
+        locked and "Unlock Windows" or "Lock Windows",
+        locked and "|cffffffffAllow moving and resizing" or "|cffffffffPrevent moving and resizing",
+      }
+    end
+
+    self:SetWidth(math.max(MIN_WIDTH, config[wid].width or MIN_WIDTH))
     self:SetHeight(config.height * (config[wid].bars or 8) + 22 + (config[wid].bars == 0 and 2 or 3))
+  end
+
+  -- hidden windows catch up when they are shown again
+  if not force and not report and not self:IsVisible() then
+    self.needs_refresh = true
+    return
   end
 
   -- clear previous results
@@ -636,14 +682,23 @@ local function Refresh(self, force, report)
   SetFightTime(config[wid].segment)
   self.values = self.GetCaps(self.segment, self.values)
 
-  local i = 1
-  for name, unitdata in spairs(self.segment, sort) do
+  local keys, count = SortedKeys(self, self.segment, sort)
+  local first = self.scroll + 1
+  local last = math.min(count, self.scroll + (config[wid].bars or 8))
+  if report then first, last = 1, math.min(count, math.max(last, 10)) end
+
+  -- only the units that get a bar (or a chat line) need their values read
+  for i = first, last do
+    local name = keys[i]
+    local unitdata = self.segment[name]
+
     -- attach name to values
     self.values.name = name
 
     -- load data values of the current unit
     self.values = self.GetData(unitdata, self.values)
 
+    local a = template.bar_string_params
     local bar = i - self.scroll
     if bar >= 1 and bar <= (config[wid].bars or 8) then
       self.bars[bar] = not force and self.bars[bar] or CreateBar(self, bar)
@@ -667,7 +722,6 @@ local function Refresh(self, force, report)
       self.bars[bar]:SetStatusBarColor(self.values.color.r, self.values.color.g, self.values.color.b)
       self.bars[bar].textLeft:SetText(i .. ". " .. self.values.name)
 
-      local a = template.bar_string_params
       local line = string.format(template.bar_string,
         self.values[a[1]], self.values[a[2]], self.values[a[3]], self.values[a[4]], self.values[a[5]])
 
@@ -678,17 +732,15 @@ local function Refresh(self, force, report)
         -math.ceil(self.bars[bar].textRight:GetStringWidth() or 0) - 10, 0)
 
       self.bars[bar]:Show()
-
-      -- report to chat if flag is set
-      if report and i <= 10 then
-        local chat = string.format(template.chat_string,
-          self.values[a[1]], self.values[a[2]], self.values[a[3]], self.values[a[4]], self.values[a[5]])
-
-        announce(i .. ". " .. self.values.name .. " " .. chat)
-      end
     end
 
-    i = i + 1
+    -- report to chat if flag is set
+    if report and i <= 10 then
+      local chat = string.format(template.chat_string,
+        self.values[a[1]], self.values[a[2]], self.values[a[3]], self.values[a[4]], self.values[a[5]])
+
+      announce(i .. ". " .. self.values.name .. " " .. chat)
+    end
   end
 end
 
@@ -710,7 +762,7 @@ local function CreateWindow(wid)
   -- create default config
   config[wid] = config[wid] or {}
   config[wid].bars = config[wid].bars or 8
-  config[wid].width = config[wid].width or 177
+  config[wid].width = math.max(MIN_WIDTH, config[wid].width or MIN_WIDTH)
   config[wid].segment = config[wid].segment or 1
   config[wid].view = config[wid].view or 1
 
@@ -737,7 +789,7 @@ local function CreateWindow(wid)
   frame:EnableMouse(true)
   frame:EnableMouseWheel(1)
   frame:SetResizable(true)
-  frame:SetMinResize(177, 22)
+  frame:SetMinResize(MIN_WIDTH, 22)
   frame:RegisterForDrag("LeftButton")
   frame:SetMovable(true)
   frame:SetScript("OnDragStart", function()
@@ -788,7 +840,7 @@ local function CreateWindow(wid)
   frame.title:SetPoint("TOPRIGHT", -2, -2)
 
   frame.btnSegment = CreateFrame("Button", "ShaguDPSDamage", frame)
-  frame.btnSegment:SetPoint("RIGHT", frame.title, "CENTER", -.5, 0)
+  frame.btnSegment:SetPoint("RIGHT", frame.title, "CENTER", TITLE_SHIFT - .5, 0)
   frame.btnSegment:SetFrameStrata("MEDIUM")
   frame.btnSegment:SetHeight(16)
   frame.btnSegment:SetWidth(50)
@@ -822,7 +874,7 @@ local function CreateWindow(wid)
   end)
 
   frame.btnMode = CreateFrame("Button", "ShaguDPSDamage", frame)
-  frame.btnMode:SetPoint("LEFT", frame.title, "CENTER", .5, 0)
+  frame.btnMode:SetPoint("LEFT", frame.title, "CENTER", TITLE_SHIFT + .5, 0)
   frame.btnMode:SetFrameStrata("MEDIUM")
   frame.btnMode:SetHeight(16)
   frame.btnMode:SetWidth(50)
@@ -861,7 +913,7 @@ local function CreateWindow(wid)
     local button = frame["btn"..name]
     local template = template
 
-    button:SetPoint("CENTER", frame.title, "CENTER", template[3], -17-template[1]*14)
+    button:SetPoint("CENTER", frame.title, "CENTER", template[3] + TITLE_SHIFT, -17-template[1]*14)
     button:SetFrameStrata("HIGH")
     button:SetHeight(16)
     button:SetWidth(50)
@@ -1045,6 +1097,35 @@ local function CreateWindow(wid)
   frame.btnWindow:SetScript("OnEnter", btnEnter)
   frame.btnWindow:SetScript("OnLeave", btnLeave)
 
+  -- lock / unlock all windows
+  frame.btnLock = CreateFrame("Button", nil, frame)
+  frame.btnLock:SetPoint("RIGHT", frame.btnWindow, "LEFT", -1, 0)
+  frame.btnLock:SetFrameStrata("MEDIUM")
+  frame.btnLock:SetHeight(16)
+  frame.btnLock:SetWidth(16)
+  frame.btnLock:SetBackdrop(backdrop)
+  frame.btnLock:SetBackdropColor(.2,.2,.2,1)
+  frame.btnLock:SetBackdropBorderColor(.4,.4,.4,1)
+
+  frame.btnLock.tex = frame.btnLock:CreateTexture()
+  frame.btnLock.tex:SetWidth(10)
+  frame.btnLock.tex:SetHeight(10)
+  frame.btnLock.tex:SetPoint("CENTER", 0, 0)
+  frame.btnLock.tex:SetTexture("Interface\\AddOns\\ShaguDPS\\img\\unlock")
+  frame.btnLock:SetScript("OnEnter", btnEnter)
+  frame.btnLock:SetScript("OnLeave", btnLeave)
+  frame.btnLock:SetScript("OnClick", function()
+    config.lock = config.lock == 1 and 0 or 1
+    window.Refresh(true)
+
+    local check = ShaguDPS.settings.checks and ShaguDPS.settings.checks.lock
+    if check then check:SetChecked(config.lock == 1) end
+
+    -- show the new state right away while the mouse is still on it
+    GameTooltip:Hide()
+    btnEnter()
+  end)
+
   frame.btnResize = CreateFrame("Frame", nil, frame)
   frame.btnResize:SetPoint("BOTTOMRIGHT", -3, 3)
   frame.btnResize:SetWidth(12)
@@ -1110,6 +1191,7 @@ window.ApplyClassic = function(frame)
   skin.IconButton(frame.btnSettings)
   skin.IconButton(frame.btnReset)
   skin.IconButton(frame.btnWindow)
+  skin.IconButton(frame.btnLock)
   skin.TextButton(frame.btnSegment, 10)
   skin.TextButton(frame.btnMode, 10)
 

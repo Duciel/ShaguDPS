@@ -44,12 +44,23 @@ local function ActiveSource()
   return name and parser.source_labels[name] or "none"
 end
 
+-- why the selected source isn't the one in use, if it isn't
+local function SourceProblem()
+  if not parser.unavailable then return end
+  return parser.source_labels[parser.unavailable] .. ": " .. (parser.unavailable_reason or "not available")
+end
+
 -- things that need more than a window refresh when they change
 local function OnConfigChanged(entry)
   if entry == "source" then
     parser:SelectSource()
     if settings.status then settings.status:Update() end
-    p("Data source: " .. ActiveSource())
+    local problem = SourceProblem()
+    if problem then
+      p("|cffff6060" .. problem .. "|cffffddcc, using " .. ActiveSource() .. " instead.")
+    else
+      p("Data source: " .. ActiveSource())
+    end
   elseif entry == "theme" then
     StaticPopup_Show("SHAGUDPS_RELOAD")
   end
@@ -173,7 +184,7 @@ local function CreateConfig(self, caption, entry, check)
 
   local text = self:CreateFontString(nil, "OVERLAY", "GameFontWhite")
   text:SetPoint("TOPLEFT", self, "TOPLEFT", classic and 20 or 10, y)
-  text:SetWidth(110)
+  text:SetWidth(170)
   text:SetHeight(ROW)
   text:SetJustifyH("LEFT")
   text:SetText(caption)
@@ -204,10 +215,15 @@ local function CreateConfig(self, caption, entry, check)
   elseif check == "status" then
     -- read-only line below the setting it belongs to
     text:SetPoint("TOPLEFT", self, "TOPLEFT", classic and 28 or 18, y + 4)
-    text:SetWidth(200)
+    text:SetWidth(classic and 280 or 270)
     text:SetTextColor(.6, .6, .6)
     text.Update = function(self)
-      self:SetText("Active: |cffffffff" .. ActiveSource())
+      if parser.unavailable then
+        -- the selected source can't be used: say why
+        self:SetText("|cffff6060" .. parser.source_labels[parser.unavailable] .. " unavailable|r, using |cffffffff" .. ActiveSource())
+      else
+        self:SetText("Active: |cffffffff" .. ActiveSource())
+      end
     end
     text:Update()
     return text
@@ -225,6 +241,9 @@ local function CreateConfig(self, caption, entry, check)
       config[entry] = this:GetChecked() and 1 or 0
       window.Refresh(true)
     end)
+
+    self.checks = self.checks or {}
+    self.checks[entry] = input
 
     input:Show()
   elseif check == "number" then
@@ -308,7 +327,7 @@ local function Build()
   settings:CreateConfig("Show Backdrops", "backdrop", "boolean")
   settings:CreateConfig("Lock Windows", "lock", "boolean")
 
-  settings:SetWidth(classic and 276 or 252)
+  settings:SetWidth(classic and 340 or 316)
   settings:SetHeight(settings.top + settings.entries * ROW + (classic and 16 or 8))
 end
 

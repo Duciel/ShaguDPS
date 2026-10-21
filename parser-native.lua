@@ -25,6 +25,10 @@ local school_mask = {
   [16] = "Frost", [32] = "Shadow", [64] = "Arcane",
 }
 
+-- "Reflect (Fire)" etc, built once
+local reflect = {}
+for _, school in pairs(school_index) do reflect[school] = "Reflect (" .. school .. ")" end
+
 -- Lua 5.0 has no bit operators: test a single bit by arithmetic
 local function hasbit(value, bit)
   return math.mod(math.floor(value / bit), 2) == 1
@@ -163,7 +167,7 @@ cleu.RANGE_DAMAGE = cleu.SPELL_DAMAGE
 cleu.DAMAGE_SHIELD = function(source, target)
   -- the spell isn't named: name it like the chat parser does
   local school = school_mask[arg14] or "Physical"
-  return parser:AddData(source, "Reflect (" .. school .. ")", target, arg15, school, "damage")
+  return parser:AddData(source, reflect[school], target, arg15, school, "damage")
 end
 
 cleu.SPELL_HEAL = function(source, target)
@@ -185,6 +189,11 @@ end
 parser:RegisterSource("classicapi", {
   available = function()
     return CombatLogGetCurrentEventInfo and UnitOwnerGUID and true or nil
+  end,
+  why = function()
+    -- ClassicAPI builds before the combat log was added have the rest of the API
+    if UnitOwnerGUID or C_PlayerInfo then return "this ClassicAPI build has no combat log yet" end
+    return "ClassicAPI isn't loaded"
   end,
   enable = function()
     parser:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
@@ -219,7 +228,7 @@ local function NPSource(guid)
   return CacheSet(guid, false, 10)
 end
 
--- target names: only used to skip self damage and to find heal targets
+-- target names: heals need them to find the target's health
 local function NPTarget(guid)
   return guid and UnitName(guid) or UNKNOWN
 end
@@ -244,7 +253,10 @@ nampower.SPELL_DAMAGE_EVENT_SELF = function()
   if not arg4 or arg4 <= 0 then return end
   local source = NPSource(arg2)
   if not source then return end
-  parser:AddData(source, SpellName(arg3), NPTarget(arg1), arg4, school_index[arg7] or "Physical", "damage")
+  if arg1 == arg2 then return end -- damage to self
+
+  -- the target's name is only used to skip self damage: don't look it up
+  parser:AddData(source, SpellName(arg3), arg1, arg4, school_index[arg7] or "Physical", "damage")
 end
 nampower.SPELL_DAMAGE_EVENT_OTHER = nampower.SPELL_DAMAGE_EVENT_SELF
 
@@ -253,7 +265,8 @@ nampower.AUTO_ATTACK_SELF = function()
   if not arg3 or arg3 <= 0 then return end
   local source = NPSource(arg1)
   if not source then return end
-  parser:AddData(source, autohit, NPTarget(arg2), arg3, "Physical", "damage")
+  if arg1 == arg2 then return end
+  parser:AddData(source, autohit, arg2, arg3, "Physical", "damage")
 end
 nampower.AUTO_ATTACK_OTHER = nampower.AUTO_ATTACK_SELF
 
@@ -263,7 +276,7 @@ nampower.DAMAGE_SHIELD_SELF = function()
   local source = NPSource(arg1)
   if not source then return end
   local school = school_index[arg4] or "Physical"
-  parser:AddData(source, "Reflect (" .. school .. ")", NPTarget(arg2), arg3, school, "damage")
+  parser:AddData(source, reflect[school], arg2, arg3, school, "damage")
 end
 nampower.DAMAGE_SHIELD_OTHER = nampower.DAMAGE_SHIELD_SELF
 
@@ -284,6 +297,10 @@ end
 parser:RegisterSource("nampower", {
   available = function()
     return GetNampowerVersion and GUIDTokensWork() and true or nil
+  end,
+  why = function()
+    if not GetNampowerVersion then return "Nampower isn't loaded" end
+    return "needs SuperWoW or ClassicAPI for GUID unit tokens"
   end,
   enable = function()
     -- auto attack and heal events are off by default in Nampower

@@ -10,7 +10,8 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 ## What's new in 4.0
 
 **Data sources**
-- **ClassicAPI** (preferred): reads `COMBAT_LOG_EVENT_UNFILTERED`. Units come with
+- **ClassicAPI** (preferred): reads `COMBAT_LOG_EVENT_UNFILTERED`, which needs a
+  ClassicAPI build that includes the combat log. Units come with
   GUIDs and group/pet flags, so group members, pets, guardians and totems are found
   without scanning names on every hit, and nothing depends on the client language.
 - **Nampower**: reads `SPELL_DAMAGE_EVENT_*`, `AUTO_ATTACK_*`, `DAMAGE_SHIELD_*` and
@@ -41,6 +42,9 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 - Settings in the stock dialog box with the gold header plate, stock checkboxes,
   page arrows and close button.
 
+**Window**
+- Lock button left of the + button locks or unlocks moving and resizing of all windows.
+
 **Fixes**
 - New windows start with the size and view of the first window.
 - Long names no longer run into the numbers on the bars.
@@ -48,6 +52,11 @@ parser from [Duciel's fork](https://github.com/Duciel/ShaguDPS).
 - Fixed the best effective heal value used for the heal bar scale.
 - Bars of different windows no longer share global frame names.
 - The settings window closes with Escape.
+- When the selected data source can't be used, the settings say why and which
+  source is used instead (for example a ClassicAPI build without the combat log).
+- Less work per combat event and per refresh: names and labels are cached, damage
+  events skip the target name lookup, and only the units that get a bar are read
+  when a window refreshes. Hidden windows don't refresh.
 
 ## Installation
 1. Download the latest version and unpack it.

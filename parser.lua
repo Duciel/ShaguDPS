@@ -40,9 +40,29 @@ local function UnitByName(name)
   end
 end
 
--- trim leading and trailing spaces
+-- trim leading and trailing spaces; names repeat on every hit, so remember
+-- the results instead of building new strings each time
+local trim_cache, trim_count = {}, 0
 local function trim(str)
-  return gsub(str, "^%s*(.-)%s*$", "%1")
+  local clean = trim_cache[str]
+  if not clean then
+    clean = gsub(str, "^%s*(.-)%s*$", "%1")
+    if trim_count > 1000 then trim_cache, trim_count = {}, 0 end
+    trim_cache[str] = clean
+    trim_count = trim_count + 1
+  end
+  return clean
+end
+
+-- "Wolf (Hunter)" from the GUID-based sources is shown as "Pet: Wolf"
+local pet_actions = {}
+local function PetAction(source)
+  local action = pet_actions[source]
+  if not action then
+    action = "Pet: " .. gsub(source, "%s%(.-%)$", "")
+    pet_actions[source] = action
+  end
+  return action
 end
 
 local function combat()
@@ -261,8 +281,7 @@ parser.AddData = function(self, source, action, target, value, school, datatype)
       -- remove pet data
       entry[source] = nil
 
-      -- "Wolf (Hunter)" from the GUID-based sources is shown as "Pet: Wolf"
-      action = "Pet: " .. string.gsub(source, "%s%(.-%)$", "")
+      action = PetAction(source)
       source = data["classes"][source]
 
       -- write data into owner
@@ -343,7 +362,19 @@ parser.SelectSource = function(self)
     end
   end
 
-  -- a forced source that is missing falls back to the best available one
+  -- a forced source that is missing falls back to the best available one,
+  -- and says why it couldn't be used
+  self.unavailable = nil
+  if not pick and wanted ~= 1 then
+    for name, id in pairs(source_ids) do
+      if id == wanted then
+        local src = self.sources[name]
+        self.unavailable = name
+        self.unavailable_reason = src and src.why and src.why() or "not loaded"
+      end
+    end
+  end
+
   if not pick then
     for _, name in pairs(source_order) do
       local src = self.sources[name]
