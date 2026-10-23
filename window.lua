@@ -754,7 +754,7 @@ local function Refresh(self, force, report)
     self.hint:SetPoint("TOPRIGHT", self, "TOPRIGHT", -8, -26)
     self.hint:SetJustifyH("LEFT")
     self.hint:SetFont(STANDARD_TEXT_FONT, 10)
-    self.hint:SetText("Threat shows in a group, on an elite or boss target in combat.")
+    self.hint:SetText(ShaguDPS.threat:GetStatus())
     self.hint:Show()
   elseif self.hint then
     self.hint:Hide()

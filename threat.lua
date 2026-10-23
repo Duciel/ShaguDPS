@@ -31,7 +31,7 @@ ShaguDPS.threat = threat
 
 threat.target = nil      -- name of the unit the list belongs to
 threat.pending = nil     -- we asked and wait for our answer
-threat.last_foreign = 0  -- last answer to a question another addon asked
+threat.last_foreign = nil  -- last answer to a question another addon asked
 
 -- per player threat samples for threat per second: name -> { time, value }
 local history = {}
@@ -91,21 +91,25 @@ local function ParseAnswer(text)
   local tank_threat, my_melee = 0, nil
   local me = UnitName("player")
 
-  for name, tank, value, perc, melee in string.gfind(list, "([^:;]+):(%d):(%-?%d+):(%-?%d+):(%d)") do
+  -- Accept decimal numeric fields, just like the reference addon. Match fields
+  -- first, then validate them as TWThreat does instead of requiring integers.
+  for name, tank, value, perc, melee in string.gfind(list, "([^:;]+):([^:;]+):([^:;]+):([^:;]+):([^:;]+)") do
     value, perc = tonumber(value), tonumber(perc)
-    local entry = Entry(name)
-    entry._sum = value
-    entry._perc = perc
-    entry._tank = tank == "1" or nil
-    entry._melee = melee == "1" or nil
-    entry._tps = TPS(name, value, now)
-    seen[name] = true
+    if value and perc and (tank == "0" or tank == "1") and (melee == "0" or melee == "1") then
+      local entry = Entry(name)
+      entry._sum = value
+      entry._perc = perc
+      entry._tank = tank == "1" or nil
+      entry._melee = melee == "1" or nil
+      entry._tps = TPS(name, value, now)
+      seen[name] = true
 
-    if entry._tank then tank_threat = value end
-    if name == me then my_melee = entry._melee end
+      if entry._tank then tank_threat = value end
+      if name == me then my_melee = entry._melee end
 
-    -- class colors for group members
-    if not data.classes[name] then parser:ScanName(name) end
+      -- class colors for group members
+      if not data.classes[name] then parser:ScanName(name) end
+    end
   end
 
   -- drop players that left the list
@@ -142,6 +146,22 @@ local function TargetUsable()
   return class == "elite" or class == "worldboss" or class == "rareelite"
 end
 
+-- Explain why an empty view is empty, rather than implying every target works.
+threat.GetStatus = function(self)
+  if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+    return "Join a party or raid to receive threat data."
+  elseif not TargetUsable() then
+    return "Select a living elite or boss target to view threat."
+  elseif not UnitAffectingCombat("target") then
+    return "Waiting for the target to enter combat."
+  elseif self.last_answer then
+    return "The server returned no threat entries for this target."
+  elseif self.requested_at and GetTime() - self.requested_at >= 3 then
+    return "No threat reply received. This view requires the server threat API."
+  end
+  return "Waiting for threat data from the server."
+end
+
 local function Refresh()
   for _, callback in pairs(parser.callbacks.refresh) do callback() end
 end
@@ -166,11 +186,13 @@ threat:SetScript("OnEvent", function()
     -- we look at a target that can have one
     if not TargetUsable() then return end
     threat.target = UnitName("target")
+    threat.last_answer = GetTime()
     ParseAnswer(arg2)
     Refresh()
   elseif event == "PLAYER_TARGET_CHANGED" then
     -- the list belongs to the old target
     Clear()
+    threat.pending, threat.requested_at, threat.last_answer = nil, nil, nil
     threat.target = TargetUsable() and UnitName("target") or nil
     threat.tick = 0
     Refresh()
@@ -185,6 +207,12 @@ threat:SetScript("OnUpdate", function()
   if (this.tick or 0) > now then return end
   this.tick = now + INTERVAL
 
+  local status = threat:GetStatus()
+  if status ~= threat.status then
+    threat.status = status
+    Refresh()
+  end
+
   if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then return end
   if not TargetUsable() or not UnitAffectingCombat("target") then return end
 
@@ -192,9 +220,10 @@ threat:SetScript("OnUpdate", function()
   if not bars then return end
 
   -- another addon (TWThreat) is already asking: just listen to its answers
-  if now - threat.last_foreign < INTERVAL * 2 then return end
+  if threat.last_foreign and now - threat.last_foreign < INTERVAL * 2 then return end
 
   threat.pending = true
+  threat.requested_at = threat.requested_at or now
   local channel = GetNumRaidMembers() > 0 and "RAID" or "PARTY"
   SendAddonMessage(QUERY_PREFIX, "limit=" .. math.min(40, bars), channel)
 end)
